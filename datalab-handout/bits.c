@@ -309,7 +309,13 @@ int isPositive(int x) {
  *   Rating: 3
  */
 int isLessOrEqual(int x, int y) {
-    return 2;
+    // considering the sigbit
+    int sgnx = (x>>31)&0x1;
+    int sgny = (y>>31)&0x1;
+    int d = x + (~y+1);
+    int sgnd = (d>>31)&0x1;
+    return !(x^y) | (sgnx & !sgny) | (!(sgnx^sgny)&sgnd);
+  
 }
 /*
  * ilog2 - return floor(log base 2 of x), where x > 0
