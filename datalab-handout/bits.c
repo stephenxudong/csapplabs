@@ -207,23 +207,23 @@ int logicalShift(int x, int n) {
  *   Rating: 4
  */
 int bitCount(int x) {
-  //so difficult
-  int _mask1 = (0x55)|(0x55<<8);
-  int _mask2 = (0x33)|(0x33<<8);
-  int _mask3 = (0x0f)|(0x0f<<8);
-  int mask1 = _mask1|(_mask1<<16);
-  int mask2 = _mask2|(_mask2<<16);
-  int mask3 = _mask3|(_mask3<<16);
-  int mask4 = (0xff)|(0xff<<16);
-  int mask5 = (0xff)|(0xff<<8);
+    int mask1,mask2,mask3,mask4,mask5;
 
-  int ans = (x & mask1) + ((x>>1) & mask1);
-  ans = (ans & mask2) + ((ans>>2) & mask2);
-  ans = (ans & mask3) + ((ans>>4) & mask3);
-  ans = (ans & mask4) + ((ans>>8) & mask4);
-  ans = (ans & mask5) + ((ans>>16) & mask5);
+    mask1 = 0x55 << 8 | 0x55;
+    mask1 = mask1 << 16 | mask1;
+    mask2 = 0x33 << 8 | 0x33;
+    mask2 = mask2 << 16 | mask2;
+    mask3 = 0x0F << 8 | 0x0F;
+    mask3 = mask3 << 16 | mask3;
+    mask4 = 0xFF << 16 | 0xFF;
+    mask5 = 0xFF << 8 | 0xFF;
 
-  return ans;
+    x = (x & mask1) + ((x >> 1) & mask1);
+    x = (x & mask2) + ((x >> 2) & mask2);
+    x = (x & mask3) + ((x >> 4) & mask3);
+    x = (x & mask4) + ((x >> 8) & mask4);
+    x = (x & mask5) + ((x >> 16) & mask5);
+    return x;
 }
 /* 
  * bang - Compute !x without using !
@@ -255,14 +255,9 @@ int tmin(void) {
  *   Rating: 2
  */
 int fitsBits(int x, int n) {
-    //发现，正数只在较低的几位可能出现1，负数只在较低的几位可能出现0,
-    //若是可以使用n位表示，那么较低的几位长度就是n-1
+    int shift = 33 + ~n;
+    return !((x << shift >> shift) ^ x);
 
-    //先右移n-1位,此时tmp要么全0，要么全1
-    int tmp = x>>(n+(~0));
-    tmp = tmp+1;
-    tmp = tmp>>1;
-    return !tmp;
 }
 /* 
  * divpwr2 - Compute x/(2^n), for 0 <= n <= 30
@@ -276,9 +271,9 @@ int divpwr2(int x, int n) {
     //现需要看最高位
     //补码除以2的n次。也不是简单的直接右移，因为有符号数，正数除法是向下取整，而负数除法是向上取整。但是移位运算都是向下取整。
     // 所以需要给负数加入一个偏差(1<<n)-1，判断负数就是看最高位是否为1
-    int bias = (x>>31) & ~(((0x1<<31)>>31)<<n);
-    return (x+bias)>>n;
-    // return (x+(((x>>31)&1)<<n)+(~0)+(!((x>>31)&1)))>>n;
+    int sign = x >> 31 & 0x01;
+    return (x + (sign << n) + ~sign + 1) >> n;
+
 }
 /* 
  * negate - return -x 
@@ -298,8 +293,9 @@ int negate(int x) {
  *   Rating: 3
  */
 int isPositive(int x) {
-    //要注意排除0
-    return !((x>>31)&0x1)&!!x ;
+    /* use ~x to filter out negative numbers
+     use ~x + 1 to filter out zero, just like what we did in bang()*/
+    return (~x & (~x + 1)) >> 31 & 0x01;
 }
 /* 
  * isLessOrEqual - if x <= y  then return 1, else return 0 
@@ -314,7 +310,13 @@ int isLessOrEqual(int x, int y) {
     int sgny = (y>>31)&0x1;
     int d = x + (~y+1);
     int sgnd = (d>>31)&0x1;
-    return !(x^y) | (sgnx & !sgny) | (!(sgnx^sgny)&sgnd);
+    // x >= 0, y < 0 !
+    //return !(x^y) | (sgnx & !sgny) | (!(sgnx^sgny)&sgnd);
+    
+     /* when x >= 0 and y < 0 return 0 -- ~(~x & y) & 
+     when x < 0 and y >= 0 return 1 -- (x & ~y) |
+     when x and y have same sign, we check whether y -x >= 0 */
+    return (~(~x & y) & ((x & ~y) | ~(y + ~ x + 1))) >> 31 & 0x01;
   
 }
 /*
@@ -325,7 +327,17 @@ int isLessOrEqual(int x, int y) {
  *   Rating: 4
  */
 int ilog2(int x) {
-    return 2;
+    /* If the leftmost 1 is in nth position, result should be n - 1. 16 is ...10000, so it gets 4
+    to count that length, we make bits from 0 ~ n all 1, and use bit count*/
+    /* Pass the most significant to low bits */
+    int ans = 0;
+    ans = ans + ((!!(x>>(16 + ans)))<<4);
+    ans = ans + ((!!(x>>(8 + ans)))<<3);
+    ans = ans + ((!!(x>>(4 + ans)))<<2);
+    ans = ans + ((!!(x>>(2 + ans)))<<1);
+    ans = ans + ((!!(x>>(1 + ans)))<<0);
+
+    return ans;
 }
 /* 
  * float_neg - Return bit-level equivalent of expression -f for
@@ -339,7 +351,12 @@ int ilog2(int x) {
  *   Rating: 2
  */
 unsigned float_neg(unsigned uf) {
-    return 2;
+    unsigned mask = 0x80000000;
+    unsigned NaN = 0x7FC00000;
+    unsigned inf = 0xFFC00000;
+    if (uf == NaN || uf == inf)
+        return uf;
+    return uf ^ mask;
 }
 /* 
  * float_i2f - Return bit-level equivalent of expression (float) x
@@ -351,8 +368,43 @@ unsigned float_neg(unsigned uf) {
  *   Rating: 4
  */
 unsigned float_i2f(int x) {
-    return 2;
+    /* Fisrt we filter out two special cases: 
+    1. 0 is only denormalized number for int
+    2. INT_MIN is hard to deal with since -x = x 
+    Then we set exp and frac by moving MSB to leftmost,
+    and due to sign(1 bit), exp(8 bit) and nomalization, it should be rightshfted by 8.
+    So rightmost 8bit,we call it tail, would be num to round.
+    Then we do round to even, and add exp by one if it is needed.*/
+    unsigned sign = 0, exp, frac, tail;
+
+    if (x == 0x80000000)//INT_MIN
+        return 0xcf000000;    
+    if (x == 0)
+        return 0;
+
+    if (x < 0) {
+        sign = 1;
+        x = -x;
+    }
+    frac = x;
+
+    for (exp = 31 + 127; !(frac & 0x80000000); exp--)
+        frac <<= 1;
+    //因为是左移，所以需要处理最右边的八个bit，需要round
+    tail = frac & 0xFF;
+    frac >>= 8;
+
+    if ((tail > 0x80) || (tail == 0x80 && frac & 1))
+        frac += 1;
+    if (frac == 0x01000000)
+        exp++;
+
+    frac &= 0x7fffff;
+
+    return (sign << 31) | (exp << 23) | frac;
 }
+
+
 /* 
  * float_twice - Return bit-level equivalent of expression 2*f for
  *   floating point argument f.
@@ -365,5 +417,26 @@ unsigned float_i2f(int x) {
  *   Rating: 4
  */
 unsigned float_twice(unsigned uf) {
-    return 2;
+    /*
+    If there is an overflow, return uf itself
+    If it's normalized, exp += 1
+    If it's denomalized, leftshit frac by 1, and add 1 to exp if there is a carry
+    */
+    unsigned sign = uf & 0x80000000;
+    unsigned exp = uf & 0x7f800000;
+    unsigned frac = uf & 0x7fffff;
+
+    if (uf == 0 || uf == 0x80000000) return uf;
+    if (exp == 0x7f800000) return uf;
+    if (exp) 
+        exp += 0x800000;
+    else{
+        frac <<= 1;
+        if (frac & 0x800000) {
+            //frac溢出了，需要进位
+            exp += 0x800000;
+            frac &= 0x7fffff;
+        }
+    }
+    return sign | exp | frac ;
 }
